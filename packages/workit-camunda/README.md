@@ -14,7 +14,7 @@ This package can be useful because:
 -   Instead of depending directly from a Camunda client, this project provides an abstraction layer. This way it’s easier to change the client or to make your own.
 -   You want to have a worker standardization.
 -   Uniformisation. Indeed, you can use both platforms depending project needs.
--   Added features like Opentracing.
+-   Added features like automated tracing.
 -   This package enforce feature parity between Zeebe and Camunda BPM through the client libraries. Some features exposed to the Camunda BPM platform are not presents in this package because we couldn't provide them if we switch to Zeebe. This limitation is to guide developers to prepare migration.
 
 ## Quickstart
@@ -228,32 +228,49 @@ const workerConfig = {
 IoC.bindToObject(workerConfig, CORE_IDENTIFIER.worker_config);
 ```
 
-### Opentracing
-WorkIt integrates opentracing in order to provide instrumentations to developers. By default, we bound a `NoopTracer` but you can provide your own and it must be compatible to [opentracing interface](https://opentracing.io/docs/overview/tracers/#tracer-interface). We use [Domain Probe pattern](https://martinfowler.com/articles/domain-oriented-observability.html#DomainProbesEnableCleanerMore-focusedTests) in our Camunda clients. This way, we allow developers to bind their own and/or add their instrumentations like logs and metrics. We strongly recommand to use this kind of pattern in your task.
+### Open-telemetry
+By default, we bound a `NoopTracer` but you can provide your own and it must extend [Tracer class](https://github.com/open-telemetry/opentelemetry-js/blob/master/packages/opentelemetry-types/src/trace/tracer.ts#L29).We strongly recommand to use this kind of pattern in your task: [Domain Probe pattern](https://martinfowler.com/articles/domain-oriented-observability.html#DomainProbesEnableCleanerMore-focusedTests). But here an example:
 
 ```javascript
 // Simply bind your custom tracer object like this
 IoC.bindToObject(tracer, CORE_IDENTIFIER.tracer);
 ```
-Now, you can access to `spans` property in `IMessage` object.
 
 ```javascript
 export class HelloWorldTask extends TaskBase<IMessage> {
-  public execute(message: IMessage): Promise<IMessage> {
-      const { properties, spans } = message;
-      // --------------------------
-      // You can use doamain probe pattern here.
-      const tracer =  spans.tracer();
-      const context = spans.context();
-      const span = tracer.startSpan("HelloWorldTask.execute", { childOf: context });
-      span.log({ test: true });
+  private readonly _tracer: TracerBase;
+    
+  constructor(tracer: TracerBase) {
+        this._tracer = tracer
+  }
+
+  public async execute(message: IMessage): Promise<IMessage> {
+      const { properties } = message;
+      
+      console.log(`Executing task: ${properties.activityId}`);
+      console.log(`${properties.bpmnProcessId}::${properties.processInstanceId} Servus!`);
+      message.body.test = true;
+      // This call will be traced automatically
+      const response = await axios.get('https://jsonplaceholder.typicode.com/todos/1');
+      
+      // you can also create a custom trace like this :
+      const span = this._tracer.startChildSpan({ name: 'customSpan', kind: SpanKind.CLIENT });
+      
+      console.log();
+      console.log('data:');
+      console.log(response.data);
       // put your business logic here
-      span.finish();
+
+      // finish the span scope
+      span.end();
+      
       return Promise.resolve(message);
   }
 }
 ```
 You can look to `sample` folder where we provide an example (parallel.ts) using [Jaeger](https://www.jaegertracing.io/docs/latest/).
+
+[See get started section with OpenTelemetry](.docs/WORKER.md#add-traces-to-your-worker-with-opentelemetry)
 
 ### Define your config for each platform
 
@@ -304,8 +321,7 @@ npm test
 *   [zeebe-node](https://github.com/CreditSenseAU/zeebe-client-node-js) - nodejs client for Zeebe
 *   [camunda-external-task-client-js](https://github.com/camunda/camunda-external-task-client-js) - nodejs client for Camunda BPM
 *   [inversify](https://github.com/inversify/InversifyJS) - Dependency injection
-*   [opentracing](https://github.com/opentracing/opentracing-javascript) - add instrumentation to the operations to be tracked
-
+*   [opentelemtry](https://opentelemetry.io/) - add instrumentation (provides a single set of APIs, libraries to capture distributed traces) 
 ## Philosophy
 
 1.  Allow Javascript developers to write code that adheres to the SOLID principles.
@@ -344,22 +360,24 @@ docker run -d --name camunda -p 8080:8080 camunda/camunda-bpm-platform:latest
 -   Make sample and confirm compatibility with DMN
 -   Adding a common exception error codes between Manager clients
 -   Add metrics by using prometheus lib
--   Questionning about spliting this project in 4 parts (core-camunda-message, core-camunda-engine-client-lib, core-zeebe-engine-client-lib, core-camunda-client-lib)
-    - Dependencies would be 
-        - core-camunda-message -> core-camunda-engine-client-lib
-        - core-camunda-message -> core-zeebe-engine-client-lib
-        - core-camunda-client-lib, core-zeebe-engine-client-lib or core-camunda-engine-client-lib  -> app
 </details>
 
 ## Versionning
 
 We use [SemVer](http://semver.org/) for versioning. For the versions available, see the [tags on this repository](https://github.com/VilledeMontreal/workit/tags).
 
+workit-camunda | Zeebe | Camunda BPM
+-- | -- | -- 
+\>=4.0.5 | 0.22.1 | 7.6 to latest
+3.2.x <=4.0.4 | 0.20.x < 0.20.1 | 7.6 to latest
+2.2.0 | 0.20.x | 7.6 to latest
+2.1.0 | 0.19.x | 7.6 to latest
+2.0.1 | 0.18.x | 7.6 to latest
+< 1.0.0 | <= 0.17.0 | 7.6 to latest
+
 ## Maintainers
 
-*   **Olivier Albertini** - *Initial work* - [Ville de Montréal](https://github.com/VilledeMontreal)
-
-See also the list of [contributors](CONTRIBUTORS.md) who participated in this project.
+See the list of [contributors](CONTRIBUTORS.md) who participated in this project.
 
 ## Contributing
 

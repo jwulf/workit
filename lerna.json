@@ -1,35 +1,30 @@
 {
-  "lerna": "2.11.0",
+  "lerna": "3.19.0",
   "packages": [
     "packages/*",
-    "services/*"
+    "examples/*"
   ],
   "command": {
     "publish": {
-      "npmClient": "npm",
       "conventionalCommits": true,
       "registry": "https://registry.npmjs.org/",
       "ignoreChanges": ["*.lock"],
       "allowBranch": "master",
       "message": "chore(release): publish"
-    },
-    "bootstrap": {
-      "npmClient": "npm"
     }
   },
   "changelog": {
     "repo": "VilledeMontreal/workit",
     "labels": {
       "breaking": ":boom: Breaking Change",
-      "enchancement": ":rocket:(Enhancement)",
-      "bug": ":bug:(Bug Fix)",
-      "core": ":earth_asia: Core",
-      "documentation": ":doc:(Refine Doc)",
-      "feat": ":sparkles:(Feature)"
+      "enhancement": ":rocket: (Enhancement)",
+      "bug": ":bug: (Bug Fix)",
+      "core": ":wrench: Core",
+      "documentation": ":books: (Refine Doc)",
+      "feat": ":sparkles: (Feature)"
     },
     "cacheDir": ".changelog"
   },
-  "useWorkspaces": true,
-  "npmClient": "npm",
+  "npmClient": "yarn",
   "version": "independent"
 }

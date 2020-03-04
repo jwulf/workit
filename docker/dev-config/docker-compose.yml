@@ -9,7 +9,7 @@ volumes:
 
 services:
   zeebe:
-    image: camunda/zeebe:0.18.0
+    image: camunda/zeebe:latest
     #    environment:
     #      - ZEEBE_LOG_LEVEL=debug
     ports:
@@ -22,11 +22,11 @@ services:
     networks:
       - zeebe_network
   operate:
-    image: camunda/operate:1.0.0-alpha11
+    image: camunda/operate:latest
     ports:
       - "8080:8080"
     volumes:
-      - ../lib/application.yml:/usr/local/operate/config/application.yml
+      - ./application.yml:/usr/local/operate/config/application.yml
     networks:
       - zeebe_network
   elasticsearch:

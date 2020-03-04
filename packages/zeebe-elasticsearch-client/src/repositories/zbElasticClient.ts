@@ -1,3 +1,8 @@
+/*!
+ * Copyright (c) 2019 Ville de Montreal. All rights reserved.
+ * Licensed under the MIT license.
+ * See LICENSE file in the project root for full license information.
+ */
 import axios, { AxiosInstance } from 'axios';
 import { HttpMethods } from '../enums/httpMethods';
 import { Configs } from '../models/config';
@@ -40,7 +45,7 @@ export class ZBElasticClient {
     options?: Partial<IOptions>
   ): Promise<IResponse<IElasticResponse<IWorkflow>>> {
     const localUrl = `${this._urls.workflows}/_search`;
-    const q = this.buildWorkflowQuery(model);
+    const q = this._buildWorkflowQuery(model);
     const response = await this.send<IElasticResponse<IWorkflow>, any>(HttpMethods.POST, localUrl, q, options);
 
     if (model.latestVersion) {
@@ -94,7 +99,7 @@ export class ZBElasticClient {
   }
 
   // TODO: use filter not just must for querying elasticsearch, in order to activate caching
-  private buildWorkflowQuery(model: Partial<IWorkflowQuery>): any {
+  private _buildWorkflowQuery(model: Partial<IWorkflowQuery>): any {
     // TODO: Improve with query builder pattern when time
     const q: any = {
       query: {

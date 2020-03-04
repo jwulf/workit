@@ -1,0 +1,184 @@
+version: 2
+
+cache_1: &cache_1
+  key: npm-cache-01-{{ .Environment.CIRCLE_JOB }}-{{ checksum "/tmp/checksums.txt" }}-1
+  paths:
+    - ./node_modules
+    - ./yarn.lock
+    - examples/basic/node_modules
+    - examples/binding/node_modules
+    - examples/event/node_modules
+    - examples/failure-strategy/node_modules
+    - examples/opentelemetry/node_modules
+    - examples/parallel/node_modules
+    - packages/workit-bpm-client/node_modules
+    - packages/workit-camunda/node_modules
+    - packages/workit-cli/node_modules
+    - packages/workit-core/node_modules
+    - packages/workit-types/node_modules
+    - packages/workit-zeebe-client/node_modules
+    - packages/zeebe-elasticsearch-client/node_modules
+
+lint: &lint
+  steps:
+    - checkout
+    - run:
+        name: Create Checksum
+        command: sh .circleci/checksum.sh /tmp/checksums.txt
+    - run:
+        name: Setup environment variables
+        command: |
+          echo "export CIRCLE_NODE_VERSION=\$(node --version | grep -oE 'v[0-9]+')" >> $BASH_ENV
+          source $BASH_ENV
+    - run:
+        name: Log out node.js version
+        command: |
+          node --version
+          echo "CIRCLE_NODE_VERSION=${CIRCLE_NODE_VERSION}"
+    - restore_cache:
+        keys:
+          - npm-cache-01-{{ .Environment.CIRCLE_JOB }}-{{ checksum "/tmp/checksums.txt" }}-1
+    - run:
+        name: Install Dependencies
+        command: yarn install
+    - save_cache:
+        <<: *cache_1
+    - run:
+        name: Compile code
+        command: yarn build
+    - run:
+        name: test
+        command: npm run lint
+
+node_tests: &node_tests
+  steps:
+    - checkout
+    - run:
+        name: Create Checksum
+        command: sh .circleci/checksum.sh /tmp/checksums.txt
+    - run:
+        name: Setup environment variables
+        command: |
+          echo "export CIRCLE_NODE_VERSION=\$(node --version | grep -oE 'v[0-9]+')" >> $BASH_ENV
+          source $BASH_ENV
+    - run:
+        name: Log out node.js version
+        command: |
+          node --version
+          echo "CIRCLE_NODE_VERSION=${CIRCLE_NODE_VERSION}"
+    - restore_cache:
+        keys:
+          - npm-cache-01-{{ .Environment.CIRCLE_JOB }}-{{ checksum "/tmp/checksums.txt" }}-1
+    - run:
+        name: Install Dependencies
+        command: yarn install
+    - save_cache:
+        <<: *cache_1
+    - run:
+        name: Compile code
+        command: yarn build
+    - run:
+        name: test
+        command: npm run test
+
+node_integraton_tests: &node_integraton_tests
+  steps:
+    - checkout
+    - run:
+        name: Create Checksum
+        command: sh .circleci/checksum.sh /tmp/checksums.txt
+    - run:
+        name: Setup environment variables
+        command: |
+          echo "export CIRCLE_NODE_VERSION=\$(node --version | grep -oE 'v[0-9]+')" >> $BASH_ENV
+          source $BASH_ENV
+    - run:
+        name: Log out node.js version
+        command: |
+          node --version
+          echo "CIRCLE_NODE_VERSION=${CIRCLE_NODE_VERSION}"
+    - restore_cache:
+        keys:
+          - npm-cache-01-{{ .Environment.CIRCLE_JOB }}-{{ checksum "/tmp/checksums.txt" }}-1
+    - run:
+        name: Install Dependencies
+        command: yarn install
+    - save_cache:
+        <<: *cache_1
+    - run:
+        name: Compile code
+        command: yarn build
+    - run:
+        name: Waiting for Zeebe to be ready
+        command: |
+          for i in `seq 1 10`;
+          do
+            nc -z localhost 26500 && echo success && exit 0
+            echo -n .
+            sleep 1
+          done
+          echo Failed waiting for Zeebe && exit 1
+    - run:
+        name: test
+        command: npm run test:all
+    - run:
+        name: report coverage
+        # command: if [ "${CIRCLE_NODE_VERSION}" = "v12" ]; then npm run codecov; fi
+        command: npm run codecov
+
+docs_filters: &docs_filters # Ignores any commit on any branch by default
+  branches:
+    ignore: gh-pages
+
+prod_filters: &prod_filters # Ignores any commit on any branch by default
+  branches:
+    ignore: /.*/
+
+  # Only act on semver version tags
+  tags:
+    only:
+      - /@(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$/
+
+workflows:
+  version: 2
+  test:
+    jobs:
+      - node10:
+          filters: *docs_filters
+      - integration-tests-node-12:
+          filters: *docs_filters
+      - node13:
+          filters: *docs_filters
+      - lint:
+          filters: *docs_filters
+  build-master: # Will only run when a tag is pushed
+    jobs:
+      - test:
+          filters: *prod_filters
+      - publish:
+          requires:
+            - test
+          filters: *prod_filters
+
+jobs:
+  # Runs the tests
+  node10:
+    docker:
+      - image: circleci/node:10
+    <<: *node_tests
+  # Runs the tests, including integration
+  integration-tests-node-12:
+    docker:
+      - image: circleci/node:12
+      - image: camunda/zeebe:0.22.1
+    <<: *node_integraton_tests
+  lint:
+    docker:
+      - image: circleci/node:lts
+    <<: *lint
+  node13:
+    docker:
+      - image: circleci/node:13
+    <<: *node_tests
+
+

@@ -8,25 +8,42 @@
 
 ## Motivation
 
-We needed a framework to help us quickly build workers used to execute tasks. [Zeebe](https://zeebe.io/) provides a good fit with our stack. Until this is production ready, we are keeping the [Camunda Bpm](https://camunda.com/products/bpmn-engine/). Indeed, Zeebe is in developper preview. In order to make the transition smoother, we use this package. We can experiment and choose the Camunda platform we want without rewritting our business logic.
+We needed a framework to help us quickly build workers used to execute tasks.
 
 This package can be useful because:
-
+-   Experiment and choose the Camunda platform you want without rewritting the business logic.
 -   At this moment, Zeebe doesn't provide all BPMN components. Zeebe is new and some unexpected bugs can appear during development so we can easily revert back to the the former platform if an issue was to rise.
 -   Instead of depending directly from a Camunda client, this project provides an abstraction layer. This way it’s easier to change the client or to make your own.
 -   You want to have a worker standardization.
 -   Uniformisation. Indeed, you can use both platforms depending project needs.
--   Added features like Opentracing.
+-   Added features like automated tracing.
 -   This package enforce feature parity between Zeebe and Camunda BPM through the client libraries. Some features exposed to the Camunda BPM platform are not presents in this package because we couldn't provide them if we switch to Zeebe. This limitation is to guide developers to prepare migration.
 
 ## Quickstart
 
-[Get started in 2 minutes](packages/workit-camunda/.docs/WORKER.md).
+[Get started in 2 minutes](getting-started/README.md).
 
 ## Documentation
 
--   [.docs](packages/workit-camunda/.docs/) contains written documentation
+-   [Documentation is available in this folder](packages/workit-camunda/.docs/)
 -   Comprehensive API documentation is available [online](https://villedemontreal.github.io/workit/) and in the `docs` subdirectory
+
+## Packages
+
+### API
+
+| Package | Description |
+| --- | ---|
+| [workit-types](https://github.com/VilledeMontreal/workit/tree/master/packages/workit-types) | This package provides TypeScript interfaces and enums for the Workit core model. 
+| [workit-core](https://github.com/VilledeMontreal/workit/tree/master/packages/workit-core) | This package provides default and no-op implementations of the Workit types 
+
+### Implementation / Clients
+
+| Package                                  | Description |
+| ---------------------------------------- | -----------------|
+| [workit-bpm-client](https://github.com/VilledeMontreal/workit/tree/master/packages/workit-bpm-client) | This module provides a full control over the Camunda Bpm platform.<br> It use [`camunda-external-task-client-js`](https://github.com/camunda/camunda-external-task-client-js) by default. |
+| [workit-zeebe-client](https://github.com/VilledeMontreal/workit/tree/master/packages/workit-zeebe-client) | This module provides a full control over the Zeebe platform.<br> It use [`zeebe-node`](https://github.com/creditsenseau/zeebe-client-node-js) and [`zeebe-elasticsearch-client`](https://github.com/VilledeMontreal/workit/tree/master/packages/zeebe-elasticsearch-client)  by default. |
+| [workit-camunda](https://github.com/VilledeMontreal/workit/tree/master/packages/workit-camunda) | This module allows you to switch between Camunda BPM and Zeebe easily.<br> It use [`workit-bpm-client`](https://github.com/VilledeMontreal/workit/tree/master/packages/workit-bpm-client) and [`workit-zeebe-client`](https://github.com/VilledeMontreal/workit/tree/master/packages/workit-zeebe-client) by default. |
 
 ## Installing
 
@@ -234,33 +251,54 @@ const workerConfig = {
 IoC.bindToObject(workerConfig, CORE_IDENTIFIER.worker_config);
 ```
 
-### Opentracing
-WorkIt integrates opentracing in order to provide instrumentations to developers. By default, we bound a `NoopTracer` but you can provide your own and it must be compatible to [opentracing interface](https://opentracing.io/docs/overview/tracers/#tracer-interface). We use [Domain Probe pattern](https://martinfowler.com/articles/domain-oriented-observability.html#DomainProbesEnableCleanerMore-focusedTests) in our Camunda clients. This way, we allow developers to bind their own and/or add their instrumentations like logs and metrics. We strongly recommand to use this kind of pattern in your task.
+### OpenTelemetry
+By default, we bound a `NoopTracer` but you can provide your own and it must extend [Tracer](https://github.com/open-telemetry/opentelemetry-js/blob/master/packages/opentelemetry-api/src/trace/tracer.ts#L29).We strongly recommand to use this kind of pattern in your task: [Domain Probe pattern](https://martinfowler.com/articles/domain-oriented-observability.html#DomainProbesEnableCleanerMore-focusedTests). But here an example:
 
 ```javascript
 // Simply bind your custom tracer object like this
 IoC.bindToObject(tracer, CORE_IDENTIFIER.tracer);
 ```
-Now, you can access to `spans` property in `IMessage` object.
 
 ```javascript
 export class HelloWorldTask extends TaskBase<IMessage> {
-  public execute(message: IMessage): Promise<IMessage> {
-      const { properties, spans } = message;
-      // --------------------------
-      // You should use domain probe pattern here 
-      // See internal code (ICamundaClientInstrumentation), but here an example:
-      const tracer =  spans.tracer();
-      const context = spans.context();
-      const span = tracer.startSpan("HelloWorldTask.execute", { childOf: context });
-      span.log({ test: true });
+  private readonly _tracer: Tracer;
+    
+  constructor(tracer: Tracer) {
+        this._tracer = tracer
+  }
+
+  public async execute(message: IMessage): Promise<IMessage> {
+      const { properties } = message;
+      
+      console.log(`Executing task: ${properties.activityId}`);
+      console.log(`${properties.bpmnProcessId}::${properties.processInstanceId} Servus!`);
+
+      // This call will be traced automatically
+      const response = await axios.get('https://jsonplaceholder.typicode.com/todos/1');
+      
+      // you can also create a custom trace like this :
+      const currentSpan = tracer.getCurrentSpan();
+      const span = this._tracer.startSpan('customSpan', {
+        parent: currentSpan,
+        kind: SpanKind.CLIENT,
+        attributes: { key: 'value' },
+      });
+      
+      console.log();
+      console.log('data:');
+      console.log(response.data);
       // put your business logic here
-      span.finish();
+
+      // finish the span scope
+      span.end();
+      
       return Promise.resolve(message);
   }
 }
 ```
-You can look to `sample` folder where we provide an example (worker.4.ts) using [Jaeger](https://www.jaegertracing.io/docs/latest/).
+You can look to `sample` folder where we provide an example (parallel.ts) using [Jaeger](https://www.jaegertracing.io/docs/latest/).
+
+[See get started section with OpenTelemetry](packages/workit-camunda/.docs/WORKER.md#add-traces-to-your-worker-with-opentelemetry)
 
 ### Define your config for the platform you want to use
 
@@ -348,7 +386,7 @@ npm test
 *   [zeebe-node](https://github.com/CreditSenseAU/zeebe-client-node-js) - nodejs client for Zeebe
 *   [camunda-external-task-client-js](https://github.com/camunda/camunda-external-task-client-js) - nodejs client for Camunda BPM
 *   [inversify](https://github.com/inversify/InversifyJS) - Dependency injection
-*   [opentracing](https://github.com/opentracing/opentracing-javascript) - add instrumentation to the operations to be tracked
+*   [opentelemetry](https://opentelemetry.io/) - add instrumentation to the operations (provides a single set of APIs, libraries to capture distributed traces)
 
 ## Philosophy
 
@@ -390,20 +428,25 @@ docker run -d --name camunda -p 8080:8080 camunda/camunda-bpm-platform:latest
 -   Make sample and confirm compatibility with DMN
 -   Adding a common exception error codes between Manager clients
 -   Add metrics by using prometheus lib
--   Questionning about spliting this project in 4 parts (core-camunda-message, core-camunda-engine-client-lib, core-zeebe-engine-client-lib, core-camunda-client-lib)
-    - Dependencies would be 
-        - core-camunda-message -> core-camunda-engine-client-lib
-        - core-camunda-message -> core-zeebe-engine-client-lib
-        - core-camunda-client-lib, core-zeebe-engine-client-lib or core-camunda-engine-client-lib  -> app
 </details>
 
 ## Versionning
 
 We use [SemVer](http://semver.org/) for versioning. For the versions available, see the [tags on this repository](https://github.com/VilledeMontreal/workit/tags).
 
+workit-* | Zeebe | Camunda BPM
+-- | -- | -- 
+\>=4.0.5 | 0.22.1 | 7.6 to latest
+3.2.x <=4.0.4 | 0.20.x < 0.20.1 | 7.6 to latest
+3.1.x | 0.20.x < 0.20.1 | 7.6 to latest
+2.2.0 | 0.20.x < 0.20.1 | 7.6 to latest
+2.1.0 | 0.19.x | 7.6 to latest
+2.0.1 | 0.18.x | 7.6 to latest
+< 1.0.0 | <= 0.17.0 | 7.6 to latest
+
 ## Maintainers
 
-See also the list of [contributors](CONTRIBUTORS.md) who participated in this project.
+See the list of [contributors](CONTRIBUTORS.md) who participated in this project.
 
 ## Contributing
 
